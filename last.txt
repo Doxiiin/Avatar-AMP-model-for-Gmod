@@ -1,0 +1,705 @@
+--  libs/MeshBuilder.txt
+
+local MeshBuilder = (function() return (function()
+
+    if setAuthor then
+        setAuthor((chip():getChipAuthor() or "") .. "\n [ MeshBuilder lib by Kekobka ]")
+    end
+
+    --- task.txt
+    local Task = (function()
+
+        if setAuthor then
+            setAuthor((chip():getChipAuthor() or "") .. "\n[ Task lib by Kekobka ]")
+        end
+        if not Task then
+            Task = class("Task")
+        end
+        local function canProcess()
+            return math.max(cpuTotalAverage(), cpuTotalUsed() / 4) < cpuMax() * 0.7
+        end
+        local tasks = {}
+        Task.static.pool = tasks
+        local While = false
+        local function WORK()
+            for Key, work in ipairs(tasks) do
+                if work.thread(Key) then
+                    table.remove(tasks, Key)
+                end
+            end
+        end
+        local function RUNTASK()
+            if While then
+                local curtime = timer.systime()
+                while timer.systime() - curtime < 1 / 60 and canProcess() do
+                    WORK()
+                end
+            else
+                WORK()
+            end
+
+            if #tasks < 1 then
+                hook.remove("think", table.address(Task))
+            end
+        end
+
+        function Task:initialize(func, hk)
+            self.func = func
+            self.ret = {}
+            self.solved = false
+            self.thread = coroutine.wrap(function(Key)
+                self.ret = {self.func(self)}
+                self.solved = true
+                if self.thenfn then
+                    self.thenfn(unpack(self.ret))
+                end
+                return true
+            end)
+        end
+
+        function Task:start()
+            table.insert(tasks, self)
+            hook.add("think", table.address(Task), RUNTASK)
+            return self
+        end
+
+        function Task.run(func, hk)
+            return Task(func, hk):start()
+        end
+        local dummyfunc = function()
+            return true
+        end
+        function Task:cancel()
+            self.thread = dummyfunc
+        end
+
+        function Task.all(tasks)
+            for _, task in pairs(tasks) do
+                while not task.solved do
+                    Task.yield()
+                end
+            end
+            local ret = {}
+            for _, task in pairs(tasks) do
+                table.insert(ret, task.ret)
+            end
+            return unpack(ret)
+        end
+        TaskAll = Task.all
+        local coroutine_wait, coroutine_yield = coroutine.wait, coroutine.yield
+        function Task.sleep(ms)
+            coroutine_wait(ms / 1000)
+        end
+
+        sleep = Task.sleep
+
+        function Task.yield()
+            coroutine_yield()
+        end
+
+        function Task:th(fn)
+            self.thenfn = fn
+        end
+
+        function Task.While(bool)
+            local temp = While
+            While = bool
+            return temp
+        end
+
+        function Task:await()
+            while not self.solved do
+                coroutine_yield()
+            end
+            return unpack(self.ret)
+        end
+        function Task:kill()
+            table.removeByValue(tasks, self)
+            table.empty(self)
+            self = nil
+        end
+
+        Task.wait = Task.await
+
+        await = setmetatable({}, {
+            __mul = function(_, task)
+                -- assert(istable(task) and task:isInstanceOf(Task), "await for Task only")
+                return task:await()
+            end,
+            __tostring = function()
+                return "await function"
+            end
+        })
+
+        async = setmetatable({}, {
+            __mul = function(_, fn)
+                assert(isfunction(fn), "is not function")
+
+                return function(...)
+                    local args = {...}
+
+                    return Task.run(function()
+                        return fn(unpack(args))
+                    end)
+                end
+            end,
+            __tostring = function()
+                return "async function"
+            end
+        })
+        if not TASKINITIALIZED then
+
+            local http_ = table.copy(http)
+
+            fetch = async * function(url, options)
+                options = options or {}
+                local ret
+                local cc = function(...)
+                    local args = {...}
+                    ret = {
+                        body = args[1],
+                        length = args[2],
+                        headers = args[3],
+                        code = args[4]
+                    }
+                end
+                if options.payload then
+
+                    http_.post(url, options.payload, cc, cc, options.headers)
+                else
+                    http_.get(url, cc, cc, options.headers)
+                end
+                while not ret do
+                    Task.yield()
+                end
+                return ret
+            end
+            http.isAsync = true
+            if CLIENT then
+
+                bass.isAsync = true
+                local bass_ = table.copy(bass)
+
+                bassURL = async * function(path, flags)
+
+                    local ret
+
+                    bass_.loadURL(path, flags or "", function(...)
+                        ret = {...}
+                    end)
+
+                    while not ret do
+                        Task.yield()
+                    end
+                    return unpack(ret)
+                end
+                soundLoad = async * function(url, flags)
+                    local ret
+                    local cc = function(...)
+                        local args = {...}
+                        ret = {
+                            Bass = args[1],
+                            error = args[2],
+                            name = args[3]
+                        }
+                    end
+
+                    bass_.loadURL(url, flags or "", cc)
+
+                    while not ret do
+                        Task.yield()
+                    end
+                    return ret
+                end
+            else
+                local prop_ = table.copy(prop)
+
+                prop.createAsync = async * function(...)
+
+                    while not prop_.canSpawn() do
+                        Task.sleep(200)
+                    end
+
+                    return prop_.create(...)
+
+                end
+                prop.createSeatAsync = async * function(...)
+
+                    while not prop_.canSpawn() do
+                        Task.sleep(200)
+                    end
+
+                    return prop_.createSeat(...)
+
+                end
+                prop.createCustomAsync = async * function(...)
+
+                    while not prop_.canSpawn() do
+                        Task.sleep(200)
+                    end
+                    return prop_.createCustom(...)
+
+                end
+            end
+            hologram.createAsync = async * function(...)
+
+                while not hologram.canSpawn() do
+                    Task.sleep(200)
+                end
+                return hologram.create(...)
+
+            end
+        end
+        _G.TASKINITIALIZED = true
+
+        return Task
+
+    end)()
+
+    --- perms.txt
+    local PERMA = (function()
+
+        --    MeshBuilder 
+
+        local PERMA = class("PERMA")
+
+        function PERMA:initialize()
+            self.perms = {}
+            self.satisfied = false
+        end
+        function PERMA:check(perm, obj)
+            local has = hasPermission(perm, obj)
+            if not has then
+                table.insert(self.perms, perm)
+            end
+            return self
+        end
+        function PERMA:setup()
+            if #self.perms > 0 then
+                setupPermissionRequest(self.perms, "AUTO GENERATED", true)
+                hook.add("permissionrequest", table.address(self), function()
+                    if permissionRequestSatisfied() then
+                        self.satisfied = true
+                        self:onSatisfied()
+                    end
+                end)
+            else
+                self.satisfied = true
+                self:onSatisfied()
+            end
+        end
+
+        -- STUB
+        function PERMA:onSatisfied()
+        end
+
+        return PERMA
+
+    end)()()
+
+    local _cachedMaterials = {}
+
+    local function isURL(str)
+        local _1, _2, prefix = str:find("^(%w-):")
+
+        return prefix == "http" or prefix == "https" or prefix == "data"
+    end
+
+    local MeshBuilder = class("MeshBuilder")
+
+    function MeshBuilder:initialize(link, d)
+
+        self.link = link
+        self.debug = d or false
+        if CLIENT then
+            PERMA:check("http.get", link):setup()
+        end
+        self.props = {}
+        self.objects = {}
+        self.players = {}
+        self.waiting = {}
+
+        hook.add("clientinitialized", table.address(self), function(ply)
+            table.insert(self.players, ply)
+            if self.applyed then
+                self:send(ply)
+            else
+                table.insert(self.waiting, ply)
+            end
+        end)
+    end
+    if SERVER then
+        local color_white = Color(255, 255, 255, 255)
+        function MeshBuilder:build(name, pos, ang, scale, parent, relativeTo, color, mat)
+            local rto = relativeTo or parent
+            local holo = hologram.create(rto and rto:localToWorld(pos) or pos, rto and rto:localToWorldAngles(ang) or ang, "models/starfall/holograms/box.mdl", scale)
+            holo:setColor(color or color_white)
+            if parent then
+                holo:setParent(parent)
+            end
+            table.insert(self.objects, {
+                name = name,
+                holo = holo,
+                color = color,
+                mat = (type(mat) == "table" and table.copy(mat) or {
+                    basetexture = tostring(mat)
+                })
+            })
+            return holo
+        end
+
+        function MeshBuilder:phys(name, pos, ang, scale, parent, relativeTo)
+
+            local prop = nil
+            table.insert(self.props, {name, pos, ang, scale, parent, relativeTo, function(p)
+                prop = p
+            end})
+
+            return async * function(wait)
+
+                while not prop do
+                    Task.sleep(wait or 250)
+                end
+                return prop
+            end
+
+        end
+
+        MeshBuilder.serverParse = async * function(self)
+
+            for _, p in next, self.props do
+                local names, pos, ang, scale, parent, rto, task = unpack(p)
+
+                self.rawObj = (await * fetch(self.link)).body
+                local old = Task.While(true)
+                self.meshes = mesh.parseObj(self.rawObj, true)
+                Task.While(old)
+                local t = {}
+                local sito = {}
+                if isstring(names) then
+                    names = {names}
+                end
+
+                for Id, name in next, names do
+                    t[Id] = {}
+                    for _, i in next, self.meshes[name] do
+                        if not sito[i.pos] then
+                            table.insert(t[Id], i.pos * scale)
+                            sito[i.pos] = true
+                        end
+                    end
+                end
+
+                local p = await * prop.createCustomAsync(rto and rto:localToWorld(pos) or pos, rto and rto:localToWorldAngles(ang) or ang, t, true)
+                p:setParent(parent)
+
+                task(p)
+            end
+
+        end
+
+        function MeshBuilder:apply(d)
+            self.applyed = true
+
+            if #self.waiting > 0 then
+                self:send(self.waiting)
+                self.waiting = {}
+            end
+            self:serverParse()
+        end
+        function MeshBuilder:send(ply)
+
+            net.start("MeshBuilder.apply")
+            net.writeBool(self.debug)
+            net.writeString(self.link)
+            net.writeTable(self.objects)
+            net.send(ply, false)
+
+        end
+        local function sendNotify(ply, bool)
+
+            if not isValid(owner()) then
+                return
+            end
+            net.start("MeshBuilder.notify")
+            net.writeBool(bool)
+            net.writeEntity(ply)
+            net.send(owner(), false)
+        end
+        net.receive("MeshBuilder.applyed", function(len, ply)
+            sendNotify(ply, false)
+        end)
+        net.receive("MeshBuilder.Parsed", function(len, ply)
+            sendNotify(ply, true)
+        end)
+        net.receive("MeshBuilder.error", function(len, ply)
+            sendNotify(ply, true)
+        end)
+
+    else
+
+        local initialChipName = chip():getChipName()
+        local function setStatus(status)
+            setName(string.format("%s (%s)", initialChipName, status))
+        end
+        hook.add("StarfallError", table.address(MeshBuilder), function()
+            net.start("MeshBuilder.error")
+            net.send()
+        end)
+        net.receive("MeshBuilder.apply", function()
+            local debug = net.readBool()
+            local link = net.readString()
+            local objects = net.readTable()
+            local builder = MeshBuilder(link, debug)
+            builder.objects = objects
+            builder:parse()
+        end)
+
+        net.receive("MeshBuilder.notify", function()
+            local type = net.readBool()
+            local ply = net.readEntity()
+
+            if type then
+                notification.kill(tostring(ply:getUserID()))
+                return
+            end
+
+            notification.addProgress(tostring(ply:getUserID()), string.format("%s is loading mesh", ply:getName()))
+        end)
+
+        local fancyStatus = async * function(status)
+            local count = 0
+            while true do
+                count = count % 3 + 1
+                setStatus(status .. ("."):rep(count))
+                Task.sleep(450)
+            end
+        end
+        MeshBuilder.parse = async * function(self)
+
+            if not self.debug and table.count(self.objects) <= 0 then
+                return
+            end
+            Task.While(false)
+            local count = 0
+            local wait = fancyStatus("wait permissions")
+            while not PERMA.satisfied do
+                Task.yield()
+            end
+            wait:kill()
+
+            net.start("MeshBuilder.applyed")
+            net.send()
+
+            local Getting = fancyStatus("Getting file")
+            self.objVersion = self.objVersion or 0
+            local linkhash = crc(self.link .. self.objVersion)
+
+            if self.force_download then
+                self.rawObj = (await * fetch(self.link)).body
+                local linkhash = crc(self.link)
+                if hasPermission("file.writeTemp") then
+                    file.writeTemp("meshbuilder/" .. linkhash .. ".dat", self.rawObj)
+                end
+            elseif hasPermission("file.exists") and file.existsTemp("meshbuilder/" .. linkhash .. ".dat") then
+                self.rawObj = file.readTemp("meshbuilder/" .. linkhash .. ".dat")
+            else
+                self.rawObj = (await * fetch(self.link)).body
+                if hasPermission("file.writeTemp") then
+                    file.writeTemp("meshbuilder/" .. linkhash .. ".dat", self.rawObj)
+                end
+            end
+            Getting:kill()
+
+            local triangles = mesh.trianglesLeft()
+            local last = Task.While(true)
+            local parsing = fancyStatus("File received, parsing")
+            self.meshData = mesh.createFromObj(self.rawObj, true)
+            self.rawObj = nil
+            parsing:kill()
+            Task.While(last)
+            self:onParsed(triangles - mesh.trianglesLeft())
+            self:_applyMeshes()
+
+            setName(initialChipName)
+        end
+        function MeshBuilder:onParsed()
+
+        end
+
+        MeshBuilder._applyMeshes = async * function(self)
+            local last = Task.While(false)
+            local meshData = self.meshData
+            if self.debug then
+                local s = getScript("libs/MeshBuilder.txt")
+                local debugcode = [[
+--  libs/MeshBuilder.txt
+
+local MeshBuilder = (function() ]] .. s .. [[ end)()
+
+if SERVER then
+    local pos = Vector()
+    local ang = Angle()
+    local scale = Vector(1)
+    local parent = chip()
+    local relativeTo = chip()
+    local color = Color(255,255,255,255)
+    local mat = "models/debug/debugwhite"
+    
+    local LINK = "]] .. self.link .. [["
+    
+    local Builder = MeshBuilder(LINK)
+]]
+                --  Builder:build(name, pos, ang, scale, parent, relativeTo, color, mat)
+                for name, v in pairs(self.meshData) do
+                    local holo = hologram.create(chip():getPos(), chip():getAngles(), "models/starfall/holograms/box.mdl", Vector(1))
+                    holo:setRenderBounds(Vector(-200), Vector(200))
+                    holo:setMesh(v)
+                    holo:setParent(chip())
+                    print(name)
+                    debugcode = debugcode .. "    Builder:build('" .. name .. "', pos, ang, scale, parent, relativeTo, color, mat)\n"
+                    Task.sleep(500)
+                end
+                debugcode = debugcode .. "    Builder:apply()\nend"
+                if player() == owner() then
+                    file.createDir("MeshBuilder")
+                    file.write("MeshBuilder/last.txt", debugcode)
+                end
+            else
+                for _, v in pairs(self.objects) do
+                    local name = v.name
+                    if self.meshData[name] ~= nil then
+
+                        local color = v.holo:getColor()
+
+                        v.holo:setRenderBounds(Vector(-200), Vector(200))
+                        v.holo:setMesh(self.meshData[name])
+                        v.holo:setColor(color)
+                        local mat = v.mat
+
+                        if isURL(mat.basetexture) then
+                            v.mat = self:_createMaterial(mat.shader, mat.basetexture, mat.bumpmap, mat.options)
+                        else
+                            hasErr, mat = pcall(material.load, mat.basetexture)
+
+                            if not hasErr then
+                                v.mat = material.load("models/debug/debugwhite")
+                            else
+                                v.mat = mat
+                            end
+                        end
+                        if v.mat then
+                            v.holo:setMeshMaterial(v.mat)
+                        end
+
+                        v.meshApplied = true
+                        -- meshData[name] = nil
+                    end
+                    Task.yield()
+                end
+                self.meshData = nil
+            end
+            net.start("MeshBuilder.Parsed")
+            net.send()
+            Task.While(last)
+        end
+
+        function MeshBuilder:_setTexture(mat, name, texture, layoutOptions)
+            if isURL(texture) then
+                layoutOptions = layoutOptions or {}
+                mat:setTextureURL(name, texture, function(_, _, _, _, layout)
+                    if not layout then
+                        return
+                    end
+
+                    local x = layoutOptions.x or 0
+                    local y = layoutOptions.y or 0
+                    local w = layoutOptions.w or 1024
+                    local h = layoutOptions.h or 1024
+
+                    layout(x, y, w, h)
+                end)
+            else
+                mat:setTexture(name, texture)
+            end
+        end
+
+        function MeshBuilder:_createMaterial(shader, basetexture, bumpmap, options)
+            shader = shader or "VertexLitGeneric"
+            basetexture = basetexture or "models/debug/debugwhite"
+            bumpmap = bumpmap or ""
+            options = options or {}
+
+            local checksum = crc(shader .. basetexture .. bumpmap .. json.encode(options))
+
+            if _cachedMaterials[checksum] ~= nil then
+                return _cachedMaterials[checksum]
+            end
+
+            local mat = material.create(shader)
+
+            self:_setTexture(mat, "$basetexture", basetexture, options.baseLayout)
+
+            if bumpmap ~= "" then
+                self:_setTexture(mat, "$bumpmap", bumpmap, options.bumpLayout)
+            end
+
+            for k, v in pairs(options) do
+                if type(v) == "string" then
+                    mat:setString("$" .. k, v)
+                elseif type(v) == "number" then
+                    if string.match(tostring(v), "%.") then
+                        mat:setFloat("$" .. k, v)
+                    else
+                        mat:setInt("$" .. k, v)
+                    end
+                elseif type(v) == "nil" then
+                    mat:setUndefined("$" .. k, v)
+                elseif type(v) == "Vector" then
+                    mat:setVector("$" .. k, tostring(v))
+                end
+            end
+
+            _cachedMaterials[checksum] = mat
+
+            return mat
+        end
+    end
+
+    return MeshBuilder
+
+end)()
+ end)()
+
+if SERVER then
+    local pos = Vector()
+    local ang = Angle()
+    local scale = Vector(1)
+    local parent = chip()
+    local relativeTo = chip()
+    local color = Color(255,255,255,255)
+    local mat = "models/debug/debugwhite"
+    
+    local LINK = "https://raw.githubusercontent.com/Doxiiin/Avatar-AMP-model-for-Gmod/main/Amp%20suit%20lowPoly.obj"
+    
+    local Builder = MeshBuilder(LINK)
+    Builder:build('Right_Shoulders_Sho1', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Left_localize_loc2', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Left_Shoulders_Sho2', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Right_Arm_ar1', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Right_Step_step1', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Left_Leg_leg2', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Right_localize_loc1', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Left_Arm_ar2', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Body', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Left_Step_step2', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Cabina_car', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Right_Knee_knee1', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Right_Leg_leg1', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Tower_t1', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Left_Knee_knee2', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Right_Fingers_fin1', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Gun_body_back_lp', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:build('Left_Fingers_fin2', pos, ang, scale, parent, relativeTo, color, mat)
+    Builder:apply()
+end
